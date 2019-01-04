@@ -1,20 +1,32 @@
 import _ from 'lodash'
 import fs from 'fs-extra'
-import StreamBuffers from 'stream-buffers'
-import streamToPromise from 'stream-to-promise'
 import RJSON from 'relaxed-json'
-import Bluebird from 'bluebird'
-import QRCode from 'qrcode'
-import { PNG } from 'pngjs'
-import GIFEncoder from 'gifencoder'
-import { encode } from './'
+import { encode, decode } from './'
 
-async function run() {
-  console.log('running')
+let original
+
+async function test_generate() {
   const data = JSON.stringify(RJSON.parse((await fs.readFile('./test.json')).toString()))
+  original = data
   const { gif, frameCount } = await encode(data, { bytesPerFrame: 400, delayPerFrame: 200 })
   await fs.writeFile('qr.gif', gif)
   console.log(`${frameCount} frames generated.`)
+}
+
+async function test_read() {
+  const file = await fs.readFile('./qr.gif')
+  return decode(file)
+}
+
+async function run() {
+  console.log('running')
+  await test_generate()
+  const res = await test_read()
+  if (res.toString('binary') !== original) {
+    console.log('different!')
+  } else {
+    console.log('same!')
+  }
 }
 
 run()
