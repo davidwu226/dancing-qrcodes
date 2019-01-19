@@ -6,9 +6,17 @@ import { encode, decode } from './'
 let original
 
 async function test_generate() {
-  const data = JSON.stringify(RJSON.parse((await fs.readFile('./test.json')).toString()))
+  const data = JSON.stringify(RJSON.parse((await fs.readFile('./test4')).toString()))
   original = data
-  const { gif, frameCount } = await encode(data, { bytesPerFrame: 400, delayPerFrame: 200 })
+  const { gif, frameCount } = await encode(data, { bytesPerFrame: 500, delayPerFrame: 200 })
+  await fs.writeFile('qr.gif', gif)
+  console.log(`${frameCount} frames generated.`)
+}
+
+async function test_binary() {
+  const data = await fs.readFile('./test4.bz2')
+  original = data
+  const { gif, frameCount } = await encode(data, { bytesPerFrame: 500, delayPerFrame: 200 })
   await fs.writeFile('qr.gif', gif)
   console.log(`${frameCount} frames generated.`)
 }

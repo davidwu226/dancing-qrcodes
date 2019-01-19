@@ -1,12 +1,13 @@
+require('source-map-support')
+
 import _ from 'lodash'
-import StreamBuffers from 'stream-buffers'
-import streamToPromise from 'stream-to-promise'
 import Bluebird from 'bluebird'
 import QRCode from 'qrcode'
 import { PNG } from 'pngjs'
 import GIFEncoder from 'gifencoder'
 import { GifReader } from 'omggif'
 import jsQR from 'jsqr'
+import pako from 'pako'
 
 /**
  * Convert data to a dancing QR code (animated GIF).
@@ -14,12 +15,28 @@ import jsQR from 'jsqr'
  * @param data - Data to convert.
  * @param opts - Options for conversion.
  */
-export async function encode(data: string, { bytesPerFrame = 400, delayPerFrame = 500 } = {}): Promise<{ gif: Buffer, frameCount: number}> {
+export async function encode(data: string|Buffer, { bytesPerFrame = 400, delayPerFrame = 500 } = {}): Promise<{ gif: Buffer, frameCount: number}> {
   // Split string up in to frames.
-  const chunks = _.chunk(data, bytesPerFrame).map(a => Buffer.from(a.join('')).toString())
+  const buf = _.isString(data) ? Buffer.from(data) : data
+  const compress = pako.deflate(buf)
+  const chunks = _.chunk(compress, bytesPerFrame).map(a => Buffer.from(a))
+
+  const colors = [
+    '#00aa11ff',
+    '#00bb11ff',
+    '#00cc11ff',
+    '#00dd11ff',
+    '#00ee11ff',
+    '#00dd11ff',
+    '#00cc11ff',
+    '#00bb11ff',
+  ]
 
   // Generate a QR image per frame.
   let frameCount = 0
+  let width = 0
+  let height = 0
+
   const pngs = await Bluebird.map(chunks, async (c) => {
     // add in a header and pad everything.
     const header = Buffer.from([
@@ -32,35 +49,34 @@ export async function encode(data: string, { bytesPerFrame = 400, delayPerFrame 
     header.writeUInt8(chunks.length, 3)
     header.writeUInt16BE(c.length, 4)
     const padding = Buffer.alloc(bytesPerFrame - c.length, 0)
-    const data = Buffer.concat([header, Buffer.from(c), padding])
+    const data = Buffer.concat([header, c, padding])
     let x: any = [{ data: data.toString('binary'), mode: 'byte' }]
-    return toQRCode(x, { color: { dark: '#000000ff', light: '#ffffffff' }})
+    const png = PNG.sync.read(await (<any>QRCode).toBuffer(x))
+    if (png.width > width) {
+      width = png.width
+    }
+    if (png.height > height) {
+      height = png.height
+    }
+    return png
   })
 
   // Encode in to an animated GIF.
-  let encoder
+  const encoder = new GIFEncoder(width, height)
+  encoder.start()
+  encoder.setRepeat(0) // Loop infinitely.
+  encoder.setDelay(delayPerFrame)
+
   for (let i = 0; i < pngs.length; ++i) {
-    const png = PNG.sync.read(pngs[i])
-    if (!encoder) {
-      encoder = new GIFEncoder(png.width, png.height)
-      encoder.start()
-      encoder.setRepeat(0) // Loop infinitely.
-      encoder.setDelay(delayPerFrame)
-    }
-    encoder.addFrame(png.data)
+    const png = pngs[i]
+    const dst = new PNG({ width, height })
+    PNG.bitblt(png, dst, 0, 0, png.width, png.height, (width - png.width) / 2, (height - png.height) / 2)
+    encoder.addFrame(dst.data)
   }
 
   // Profit.
   encoder.finish()
   return { gif: encoder.out.getData(), frameCount }
-}
-
-// Convert data to PNG QR code.
-async function toQRCode(data: string, opts?: any): Promise<Buffer> {
-  const stream = new StreamBuffers.WritableStreamBuffer()
-  QRCode.toFileStream(stream, data, opts)
-  await streamToPromise(stream)
-  return stream.getContents()
 }
 
 /**
@@ -109,5 +125,5 @@ export async function decode(image: Buffer) {
   }
 
   const res = Buffer.concat(frames)
-  return res
+  return Buffer.from(pako.inflate(res))
 }
