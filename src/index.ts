@@ -70,6 +70,7 @@ export async function encode(data: string|Buffer, { bytesPerFrame = 400, delayPe
   for (let i = 0; i < pngs.length; ++i) {
     const png = pngs[i]
     const dst = new PNG({ width, height })
+    dst.data.fill(255, 0, dst.data.length)
     PNG.bitblt(png, dst, 0, 0, png.width, png.height, (width - png.width) / 2, (height - png.height) / 2)
     encoder.addFrame(dst.data)
   }
